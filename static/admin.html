@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>OpenHerd Admin</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/holiday.css@0.11.5"/>
+    <style>
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>OpenHerd Admin</h1>
+    </header>
+    <main>
+      <section id="login-section">
+        <h2>Sign in</h2>
+        <form id="login-form">
+          <label>
+                        Admin Password
+                        <input type="password" id="password" required/>
+          </label>
+          <footer>
+            <button type="submit">Login</button>
+          </footer>
+        </form>
+        <p id="login-status"></p>
+      </section>
+
+      <section id="dashboard-section" class="hidden">
+        <nav>
+          <ul>
+            <li>
+              <a href="#reports">Reports</a>
+            </li>
+            <li>
+              <a href="#karma">Generate Karma Codes</a>
+            </li>
+            <li>
+              <a href="#labels">Manage Labels</a>
+            </li>
+            <li>
+              <a href="#" id="logout-btn">Logout</a>
+            </li>
+          </ul>
+        </nav>
+
+        <article id="reports">
+          <header>
+            <h2>Moderation Reports</h2>
+            <button id="refresh-btn" type="button">Refresh</button>
+          </header>
+          <div id="status-message"></div>
+          <div id="reports-container">
+            <p>Loading reports…</p>
+          </div>
+        </article>
+
+        <article id="karma">
+          <header>
+            <h2>Generate Karma Codes</h2>
+          </header>
+          <form id="generate-form">
+            <label>
+                            Count
+                            <input id="gen-count" type="number" min="1" max="1000" value="10" required/>
+            </label>
+            <label>
+                            Expires (days from now)
+                            <input id="gen-days" type="number" min="1" max="365" value="14" required/>
+            </label>
+            <details>
+              <summary>Region (optional)</summary>
+              <label>Latitude <input id="gen-lat" type="number" step="0.0001"/></label>
+              <label>Longitude <input id="gen-lon" type="number" step="0.0001"/></label>
+              <label>Radius (km) <input id="gen-radius" type="number" step="0.1"/></label>
+            </details>
+            <footer>
+              <button type="submit">Generate</button>
+            </footer>
+          </form>
+          <section>
+            <h3>New Codes</h3>
+            <pre id="codes-output"></pre>
+          </section>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      let adminPassword = null;
+
+      const savedPassword = sessionStorage.getItem('adminPassword');
+      if (savedPassword) {
+        adminPassword = savedPassword;
+        showDashboard();
+      }
+
+      document
+        .getElementById('login-form')
+        .addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const password = document
+            .getElementById('password')
+            .value;
+
+          try {
+            const response = await fetch('/_openherd/admin/reports', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({password})
+            });
+
+            if (response.ok) {
+              adminPassword = password;
+              sessionStorage.setItem('adminPassword', password);
+              showDashboard();
+            } else {
+              showLoginError('Invalid password');
+            }
+          } catch (error) {
+            showLoginError('Login failed: ' + error.message);
+          }
+        });
+
+      document
+        .getElementById('logout-btn')
+        .addEventListener('click', () => {
+          adminPassword = null;
+          sessionStorage.removeItem('adminPassword');
+          showLogin();
+        });
+
+      document
+        .getElementById('refresh-btn')
+        .addEventListener('click', () => {
+          loadReports();
+        });
+
+      function showLogin() {
+        document
+          .getElementById('login-section')
+          .classList
+          .remove('hidden');
+        document
+          .getElementById('dashboard-section')
+          .classList
+          .add('hidden');
+      }
+
+      function showDashboard() {
+        document
+          .getElementById('login-section')
+          .classList
+          .add('hidden');
+        document
+          .getElementById('dashboard-section')
+          .classList
+          .remove('hidden');
+        loadReports();
+        loadLabels();
+      }
+
+      function showLoginError(message) {
+        const statusDiv = document.getElementById('login-status');
+        statusDiv.innerHTML = `<p class="status-message status-error">${message}</p>`;
+      }
+
+      function showStatusMessage(message, isError = false) {
+        const statusDiv = document.getElementById('status-message');
+        statusDiv.innerHTML = `<p class="status-message ${isError
+          ? 'status-error'
+          : 'status-success'}">${message}</p>`;
+        setTimeout(() => {
+          statusDiv.innerHTML = '';
+        }, 3000);
+      }
+
+      async function loadReports() {
+        try {
+          const response = await fetch('/_openherd/admin/reports', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({password: adminPassword})
+          });
+
+          if (!response.ok) {
+            if (response.status === 401) {
+              showLogin();
+              return;
+            }
+            throw new Error('Failed to load reports');
+          }
+
+          const reports = await response.json();
+          displayReports(reports);
+        } catch (error) {
+          showStatusMessage('Error loading reports: ' + error.message, true);
+        }
+      }
+
+      async function loadLabels() {
+        try {
+          const response = await fetch('/_openherd/moderation/labels');
+          if (!response.ok) 
+            throw new Error('Failed to load labels');
+          const data = await response.json();
+          window.availableLabels = data.labels || [];
+        } catch (error) {
+          showStatusMessage('Error loading labels: ' + error.message, true);
+        }
+      }
+
+      function displayReports(reports) {
+        const container = document.getElementById('reports-container');
+
+        if (reports.length === 0) {
+          container.innerHTML = '<p>No pending reports.</p>';
+          return;
+        }
+
+        const labelButtons = (window.availableLabels || [])
+          .map(l => `<button onclick="acceptReport('${l.label}', '${escapeHtml(l.label)}')">${escapeHtml(l.label)}</button>`)
+          .join(' ');
+
+        container.innerHTML = reports
+          .map(report => {
+            const post = report.post;
+            let postData;
+            try {
+              postData = JSON.parse(post.data);
+            } catch (e) {
+              postData = {
+                text: 'Error parsing post data'
+              };
+            }
+
+            return `
+                    <section data-report-id="${report
+              .id}">
+                      <header>
+                        <strong>Report: ${report
+              .id
+              .substring(0, 8)}…</strong>
+                        <small>Post: ${post
+              .id
+              .substring(0, 8)}…</small>
+                      </header>
+                      <p><strong>Reason:</strong> ${escapeHtml(report.reason)}</p>
+                      <p><small><strong>Reporter IP:</strong> ${report
+              .reporter_ip || 'N/A'} · <strong>Reported:</strong> ${new Date(report.reported_at).toLocaleString()}</small></p>
+                      <blockquote>${escapeHtml(postData.text || 'No text content')}</blockquote>
+                      <footer>
+                        ${labelButtons}
+                        <button onclick="acceptReport('${report.id}', null)">Accept (No Label)</button>
+                        <button onclick="deleteReport('${report.id}')">Delete Report</button>
+                      </footer>
+                    </section>
+                `;
+          })
+          .join('');
+      }
+
+      async function acceptReport(reportId, label) {
+        try {
+          const response = await fetch('/_openherd/admin/accept', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Admin-Password': adminPassword
+            },
+            body: JSON.stringify({report_id: reportId, label})
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to accept report');
+          }
+
+          showStatusMessage(
+            `Report accepted${label
+            ? ' and labeled as ' + label
+            : ''}`);
+          loadReports();
+        } catch (error) {
+          showStatusMessage('Error accepting report: ' + error.message, true);
+        }
+      }
+
+      async function deleteReport(reportId) {
+        if (!confirm('Are you sure you want to delete this report?')) {
+          return;
+        }
+
+        try {
+          const response = await fetch(`/_openherd/admin/delete/${reportId}`, {
+            method: 'DELETE',
+            headers: {
+              'X-Admin-Password': adminPassword
+            }
+          });
+
+          if (response.status === 501) {
+            showStatusMessage('Delete feature is disabled. Build with --features moderation-delete', true);
+            return;
+          }
+
+          if (!response.ok) {
+            throw new Error('Failed to delete report');
+          }
+
+          showStatusMessage('Report deleted');
+          loadReports();
+        } catch (error) {
+          showStatusMessage('Error deleting report: ' + error.message, true);
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      document
+        .getElementById('generate-form')
+        .addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const count = parseInt(document.getElementById('gen-count').value, 10) || 1;
+          const days = parseInt(document.getElementById('gen-days').value, 10) || 14;
+          const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+          const issuer = window.location.origin;
+          const lat = parseFloat(document.getElementById('gen-lat').value);
+          const lon = parseFloat(document.getElementById('gen-lon').value);
+          const radius = parseFloat(document.getElementById('gen-radius').value);
+          const region = (isFinite(lat) && isFinite(lon) && isFinite(radius))
+            ? {
+              lat,
+              lon,
+              radius_km: radius
+            }
+            : undefined;
+
+          try {
+            const resp = await fetch('/_openherd/admin/karma/codes', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Password': adminPassword
+              },
+              body: JSON.stringify({count, issuer, expires, region})
+            });
+            if (!resp.ok) 
+              throw new Error('Failed to generate codes');
+            const codes = await resp.json();
+            const pre = document.getElementById('codes-output');
+            pre.textContent = `${issuer}\n` + codes
+              .map(c => c.code)
+              .join('\n');
+            showStatusMessage(`Generated ${codes.length} codes`);
+          } catch (err) {
+            showStatusMessage('Error generating codes: ' + err.message, true);
+          }
+        });
+
+      document
+        .getElementById('add-label-form')
+        .addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const label = document
+            .getElementById('label-name')
+            .value
+            .trim();
+          const description = document
+            .getElementById('label-desc')
+            .value
+            .trim();
+
+          try {
+            const resp = await fetch('/_openherd/admin/moderation/labels', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Password': adminPassword
+              },
+              body: JSON.stringify({label, description})
+            });
+            if (!resp.ok) {
+              if (resp.status === 400) 
+                throw new Error('Label already exists');
+              throw new Error('Failed to add label');
+            }
+            showStatusMessage(`Label "${label}" added`);
+            document
+              .getElementById('label-name')
+              .value = '';
+            document
+              .getElementById('label-desc')
+              .value = '';
+            loadLabels();
+          } catch (err) {
+            showStatusMessage('Error adding label: ' + err.message, true);
+          }
+        });
+
+      async function deleteLabel(label) {
+        if (!confirm(`Delete label "${label}"? This will remove it from all posts.`)) 
+          return;
+        try {
+          const resp = await fetch(`/_openherd/admin/moderation/labels/${encodeURIComponent(label)}`, {
+            method: 'DELETE',
+            headers: {
+              'X-Admin-Password': adminPassword
+            }
+          });
+          if (!resp.ok) 
+            throw new Error('Failed to delete label');
+          showStatusMessage(`Label "${label}" deleted`);
+          loadLabels();
+        } catch (err) {
+          showStatusMessage('Error deleting label: ' + err.message, true);
+        }
+      }
+    </script>
+  </script>
+</body>
+</html>

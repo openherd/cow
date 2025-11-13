@@ -1,7 +1,7 @@
-pub mod types;
-pub mod validation;
 pub mod handlers;
 pub mod state;
+pub mod types;
+pub mod validation;
 
 #[cfg(test)]
 mod tests {

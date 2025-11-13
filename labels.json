@@ -1,0 +1,14 @@
+[
+  {
+    "label": "Spam",
+    "description": "Unsolicited commercial content or repetitive posts"
+  },
+  {
+    "label": "Abuse",
+    "description": "Harassment, threats, or hateful content"
+  },
+  {
+    "label": "NSFW",
+    "description": "Not safe for work: explicit or adult content"
+  }
+]

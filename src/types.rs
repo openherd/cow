@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Envelope {
@@ -52,4 +52,81 @@ pub enum ValidationError {
     JsonError(#[from] serde_json::Error),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeoRegion {
+    pub lat: f64,
+    pub lon: f64,
+    pub radius_km: f64,
+}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KarmaCode {
+    pub code: String,
+    pub issuer: String,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub vote_type: Option<String>,
+    pub expires: DateTime<Utc>,
+    pub region: Option<GeoRegion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_post: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used_direction: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KarmaMetadata {
+    pub code: String,
+    pub expires: DateTime<Utc>,
+    #[serde(rename = "currentPost")]
+    pub current_post: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KarmaLookupRequest {
+    pub posts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KarmaGenerateRequest {
+    pub count: u32,
+    pub issuer: String,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub vote_type: Option<String>,
+    pub expires: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<GeoRegion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModerationLabel {
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModerationReport {
+    pub post: Envelope,
+    pub reason: String,
+    #[serde(skip)]
+    pub reported_at: DateTime<Utc>,
+    #[serde(skip)]
+    pub reporter_ip: Option<String>,
+    #[serde(skip)]
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModerationLookupRequest {
+    pub posts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModerationAction {
+    pub report_id: String,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuth {
+    pub password: String,
+}
